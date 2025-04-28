@@ -23,17 +23,17 @@ struct Stack {
 };
 ```
 
-Both the stack struct and the elements array in the stack, are allocated on the heap. As was already hinted at in the challenge description, [`libgc`](https://github.com/ivmai/bdwgc) is used as memory allocator.
+Both the stack struct and the elements array in the stack, are allocated on the heap. As was already hinted at in the challenge description, [libgc](https://github.com/ivmai/bdwgc) is used as memory allocator.
 
 The challenge uses glibc 2.39 and is provided with the challenge.
 
 ## libgc - The Boehm-Demers-Weiser conservative C/C++ Garbage Collector
 
-[`libgc`](https://github.com/ivmai/bdwgc) implements automatic Garbage Collection for C and C++ programs. This means there is no longer the need for an explicit call to `free`. The implementation scans the programs memory periodically to find all reachable chunks, i.e. there exists a pointer to it. Those are called `roots`. The GC searches in the binaries data segments (`.data`, `.bss`), the program stack, registers and some other regions. From there, found chunks are marked as accessible and scanned recursively for further pointers. In the end, all unmarked chunks are deallocated. This is also known as mark-and-sweep algorithm and used by many garbage collectors.
+[libgc](https://github.com/ivmai/bdwgc) implements automatic Garbage Collection for C and C++ programs. This means there is no longer the need for an explicit call to `free`. The implementation scans the programs memory periodically to find all reachable chunks, i.e. there exists a pointer to it. Those are called `roots`. The GC searches in the binaries data segments (`.data`, `.bss`), the program stack, registers and some other regions. From there, found chunks are marked as accessible and scanned recursively for further pointers. In the end, all unmarked chunks are deallocated. This is also known as mark-and-sweep algorithm and used by many garbage collectors.
 
 Allocation in `libgc` happens page-wise. Allocations smaller than a certain threshold (`512` bytes, on Linux x64) are allocated from a page which has been split into multiple chunks for the same size and therefore only serves this size, until all chunks are being deallocated and the page can be freed. For allocations larger than the threshold, the size is rounded up to a multiple of the page size. Allocation sizes always are incremented by 1 to enforce that the pointer to the chunk, for example an allocated array, is always pointing into the chunks memory and thus is recognized by the collector as in-use and not accidentally deallocated. For example, `malloc(0x40) + 0x40` points to the region after the allocation, which often occurs when an array pointer is incremented and the array is fully filled. (\*hint\* \*hint\*)
 
-There is also an optimization for allocations in multithreaded from a thread-local cache, similar to `ptmalloc`'s tcaches, which is not relevant to the solution of challenge, but may affect the allocation pattern, depending the chosen chunk sizes.
+There is also an optimization for allocations in multithreaded from a thread-local cache, similar to `ptmalloc`'s tcaches, which is not relevant to the solution of challenge, but may affect the allocation pattern, depending on the chosen chunk sizes.
 
 ## Exploit - Overview
 
@@ -42,13 +42,13 @@ This means that when the garbage collector finds the pointer, it counts the poin
 
 To achieve arbitrary read and write, we need to manage to allocate the side chunk stack into that the memory region where the main stack `elements` pointer points to. From there, we can leak the side stack `elements` pointer by popping bytes from and overwrite it by pushing bytes to the main stack. To write to the chosen memory location, we can push to the side stack.
 
-To achieve RCE, we first overwrite the pointer guard in the thread-local storage (TLS) with zero, which is at a constant offset from the mmapped GC heap region. Then we overwrite the first exit function with with `fn=system` and `arg="/bin/sh"`. Because we now the pointer guard, we can mangle the function pointer and successfully get a shell by quitting the program.
+To achieve RCE, we first overwrite the pointer guard in the thread-local storage (TLS) with zero, which is at a constant offset from the mmapped GC heap region. Then we overwrite the first exit function with with `fn=system` and `arg="/bin/sh"`. Because we know the pointer guard, we can mangle the function pointer and successfully get a shell by quitting the program.
 
 If you know, how gaining RCE via exit functions work you can skip the following paragraph.
 
 ## RCE via __exit_funcs - details
 
-Before the program exits, oftentimes some code has to run in order to perform some cleanup. Those can be installed by using the [`atexit`](https://man7.org/linux/man-pages/man3/atexit.3.html) function in `C`. Those are stored in `exit_function_list` inside the glibc. The relevant definitions from [`exit.h`](https://elixir.bootlin.com/glibc/glibc-2.39.9000/source/stdlib/exit.h#L25) can be found below.
+Before the program exits, oftentimes some code has to run in order to perform some cleanup. Those can be registered by using the [`atexit`](https://man7.org/linux/man-pages/man3/atexit.3.html) function in `C`. Those are stored in `struct exit_function_list` inside the glibc. The relevant definitions from [`exit.h`](https://elixir.bootlin.com/glibc/glibc-2.39.9000/source/stdlib/exit.h#L25) can be found below.
 
 ```C
 enum
@@ -89,9 +89,9 @@ struct exit_function_list
   };
 ```
 
-The exit function list, is a linked list, where every node can store up to 32 exit functions. Those can be of different types, which are used to specify which parameters are passed to the function. For exploitation, the `ef_cxa` type is the most interesting, because it allows to specify an argument to the function which is passed as the first parameter. With that we can easily execute `system("/bin/sh")`.
+The `exit_function_list`, is a linked list, where every node can store up to 32 `exit_function`s. Different types specify the number of parameters and their types which are passed to the handler function. For exploitation, the `ef_cxa` type is the most interesting, because it allows to specify an argument which is passed as the first parameter. With that we can easily execute `system("/bin/sh")`.
 
-The `__exit_funcs` variable in the glibc stores the pointer to the head of the list. As the symbol is not exported by the glibc, it can be difficult to find its address. In case you have the debug symbols, you are in luck. If not, you can try to use [libc.rip](https://libc.rip/) or by diffing the source code and the assembly of `atexit` (usually, the symbol is mangled to `__cxa_atexit`) and extracting the address from there. For this challenge, I took the latter approach. `atexit` is used to install new exit functions and thus needs to reference `__exit_funcs`.
+The `__exit_funcs` variable in the glibc stores the pointer to the head of the list. As the symbol is not exported by the glibc, it can be difficult to find its address. In case you have the debug symbols, you are in luck. If not, you can try to use [libc.rip](https://libc.rip/) or by diffing the source code and the assembly of `atexit` (the symbol is mangled to `__cxa_atexit`) and extracting the address from there. For this challenge, I took the latter approach. `atexit` is used to register new exit functions and thus needs to reference `__exit_funcs`.
 
 The source code of `__cxa_atexit` can be found [here](https://elixir.bootlin.com/glibc/glibc-2.39.9000/source/stdlib/cxa_atexit.c#L65), for example. Below I put the important snippet.
 
@@ -172,9 +172,9 @@ By using a disassembler, we find the following instructions:
    /* ... */
 ```
 
-As we can see in the source code, the `__cxa_atexit` uses `__exit_funcs` and pass it to `__internal_atexit`. But this call does not show up in the assembly because the compiler inlined the function. The `__internal_atexit` first locks the global lock, the finds a slot for the new exit function (using `__exit_funcs`) and then doing a null check on the result. This pattern also can be seen in the assembly: First there is the `lock cmpxchg` for the lock operation, then the call at offset `0x4721c` and the null check directly afterward. Thus, the instruction at `0x47215` gets the address of the argument to `__new_exitfn`, which is `__exit_funcs`. Thus, we found what we were looking for.
+As we can see in the source code, the `__cxa_atexit` uses `__exit_funcs` and pass it to `__internal_atexit`. But this call does not show up in the assembly because the compiler inlined the function. The `__internal_atexit` first locks the global exit function lock, then finds a slot for the new exit function (which uses `__exit_funcs`) and then doing a null check on the result. This pattern also can be seen in the assembly: First there is the `lock cmpxchg` for the lock operation, then the call at offset `0x4721c` and the null check directly afterward. Thus, the instruction at `0x47215` gets the address of the argument to `__new_exitfn`, which is `__exit_funcs`. Thus, we found what we were looking for.
 
-One obstacle we need to overcome, is the mangling/encryption of the function pointer with the pointer guard. The formula is:
+One further obstacle we need to overcome, is the mangling/encryption of the function pointer with the pointer guard. The formula is:
 
 $`ct = rol(fn \oplus pointer\_guard, 17)`$
 
@@ -208,7 +208,7 @@ payload = flat(
 ## Mitigations
 The simple mitigation is to remove the `unterkellern` functionality. As this functionality is likely there to simplify the challenge and simulates an actual bug, we also need to consider, how to avoid the underlying bug. 
 
-One solution would be to always perform a bounds check after modifying a GC allocated pointer. But as this is likely going to be slow, requires extra effort by developer and makes the code harder to read, which in turn allows other bugs to slip through code review, is not a good option. 
+One solution would be to always perform a bounds check after modifying a GC allocated pointer. But this is likely going to be slow, requires extra effort by the developer and makes the code harder to read, which in turn allows other bugs to slip through code review. So, not a good option. 
 
 As always with code, the best practices regarding
 - Clean code,
@@ -219,7 +219,7 @@ can prevent most of those bugs.
 
 An even better option, is to use memory safe languages like Rust.
 
-TL;DR: As always with `C`: Memory safety management.
+TL;DR: As always with C: Memory safety management is the key.
 
 ## Exploit - Script
 
