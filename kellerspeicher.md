@@ -7,8 +7,6 @@ Description:
 - Category: `Pwn`
 - Difficulty: `Hard`
 - Author: `DIFF-FUSION`
-- Number of solves: `11`
-- Final points value: `332`
 
 ## Challenge Setup
 
