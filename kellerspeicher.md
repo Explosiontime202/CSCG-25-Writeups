@@ -46,7 +46,7 @@ To achieve RCE, we first overwrite the pointer guard in the thread-local storage
 
 If you know, how gaining RCE via exit functions work you can skip the following paragraph.
 
-### RCE via __exit_funcs - details
+## RCE via __exit_funcs - details
 
 Before the program exits, oftentimes some code has to run in order to perform some cleanup. Those can be installed by using the [`atexit`](https://man7.org/linux/man-pages/man3/atexit.3.html) function in `C`. Those are stored in `exit_function_list` inside the glibc. The relevant definitions from [`exit.h`](https://elixir.bootlin.com/glibc/glibc-2.39.9000/source/stdlib/exit.h#L25) can be found below.
 
@@ -139,7 +139,7 @@ libc_hidden_def (__cxa_atexit)
 
 By using a disassembler, we find the following instructions:
 
-```x86asm
+```assembly
 00000000000471e0 <__cxa_atexit@@GLIBC_2.2.5>:
    471e0:       f3 0f 1e fa             endbr64
    471e4:       55                      push   rbp
@@ -176,7 +176,7 @@ As we can see in the source code, the `__cxa_atexit` uses `__exit_funcs` and pas
 
 One obstacle we need to overcome, is the mangling/encryption of the function pointer with the pointer guard. The formula is:
 
-$$ct = rol(fn \oplus pointer\_guard, 17)$$
+$$ct = rol(fn \oplus pointer \_ guard, 17)$$
 
 where `ct` is the stored ciphertext, `rol` the rotate left function and $\oplus$ the xor operator.
 
