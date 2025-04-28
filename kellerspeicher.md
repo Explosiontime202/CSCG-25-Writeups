@@ -230,7 +230,7 @@ from pwn import *
 # p = remote("localhost", 1024)
 
 # remote
-p = remote("ae2e08417837a15ad1c6647c-1024-kellerspeicher.challenge.cscg.live", 1337, ssl=True)
+p = remote("<session-id>-1024-kellerspeicher.challenge.cscg.live", 1337, ssl=True)
 
 ### wrappers ###
 def create_haupt(size: int):
