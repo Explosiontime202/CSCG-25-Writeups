@@ -176,7 +176,7 @@ As we can see in the source code, the `__cxa_atexit` uses `__exit_funcs` and pas
 
 One obstacle we need to overcome, is the mangling/encryption of the function pointer with the pointer guard. The formula is:
 
-$$ct = rol(fn \oplus \text{pointer_guard}, 17)$$
+$$ct = rol(fn \oplus \text{pointer\_guard}, 17)$$
 
 where `ct` is the stored ciphertext, `rol` the rotate left function and $\oplus$ the xor operator.
 
